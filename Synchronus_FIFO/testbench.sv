@@ -1,3 +1,4 @@
+
 class transaction;
   rand bit wr_en,rd_en;
   rand bit [31:0] wr_data;
@@ -5,8 +6,8 @@ class transaction;
   bit full, empty;
     
   constraint rd_wr { (wr_en == 1) <-> (rd_en == 0);
-                   // rd_en dist {0:=40, 1:= 60};
-                   // wr_en dist {0:=50, 1:= 75};
+                   	rd_en dist {0:=40, 1:= 60};
+                    wr_en dist {0:=50, 1:= 25};
                    }
   
   constraint rd_wrdata { (rd_en == 1) -> (wr_data == 0); }
@@ -23,7 +24,7 @@ class generator;
   transaction gen_tr;
   mailbox #(transaction) gen_drv;
   
-  event next, done;
+  event next,done;
   int count; 
 
   function new(mailbox #(transaction) gen_drv);
@@ -129,7 +130,7 @@ class scoreboard;
 			
 			
 			if (sco_tr.rd_en) begin
-              if(!sco_tr.empty && sco_tr.rd_data == 'b0) begin
+              if(!sco_tr.empty || sco_tr.rd_data != 'b0) begin
 					rd_chk = que.pop_back();
 					
 					if (rd_chk == sco_tr.rd_data) begin
@@ -242,7 +243,7 @@ module tb;
 
 		env = new(inf);
 
-		env.gen.count = 50;
+		env.gen.count = 100;
 
 		env.main();
 
