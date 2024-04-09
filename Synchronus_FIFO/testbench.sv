@@ -1,21 +1,20 @@
+
 class transaction;
   rand bit wr_en,rd_en;
   rand bit [31:0] wr_data;
   bit [31:0] rd_data;
   bit full, empty;
     
-  constraint rd_wr { (wr_en == 1) <-> (rd_en == 0);
-                   // rd_en dist {0:=40, 1:= 60};
-                   // wr_en dist {0:=50, 1:= 75};
+ constraint rd_wr {(wr_en == 1) <-> (rd_en == 0);
+                   rd_en dist {0:=65, 1:= 50};
+                   wr_en dist {0:=56, 1:= 70};
                    }
   
   constraint rd_wrdata { (rd_en == 1) -> (wr_data == 0); }
   
-  
   function void display(input string tag);
    $display("[%0s]: wr_en =%0d, rd_en =%0d, wr_data =%0d, rd_data =%0d, full =%0d, empty =%0d",tag, wr_en, rd_en, wr_data, rd_data, full, empty);
   endfunction
-
 endclass
 
 
@@ -23,7 +22,7 @@ class generator;
   transaction gen_tr;
   mailbox #(transaction) gen_drv;
   
-  event next, done;
+  event next,done;
   int count; 
 
   function new(mailbox #(transaction) gen_drv);
@@ -32,6 +31,7 @@ class generator;
   endfunction
   
   task main();
+    gen_tr.rd_wrdata.constraint_mode(1);
     repeat(count) begin
       assert(gen_tr.randomize) else begin 
         $display("Randomiztion Failed at %0t", $time);
@@ -43,6 +43,29 @@ class generator;
     end
   ->done;
   endtask
+  
+   task rw_full();
+     gen_tr.rd_wrdata.constraint_mode(0);
+     for(int i = 0; i<=17; i++) begin
+       gen_tr.randomize();
+       gen_tr.wr_en = 1;
+       gen_tr.rd_en = 0;
+       //gen_tr.wr_data.randomize;
+       gen_drv.put(gen_tr);
+       gen_tr.display("DRV");
+       @(next);
+      end
+      
+     for(int i = 0; i<=17; i++) begin
+       gen_tr.wr_en = 0;
+       gen_tr.rd_en = 1;
+       gen_tr.wr_data = 'b0;
+       gen_drv.put(gen_tr);
+       gen_tr.display("DRV");
+      @(next);
+      end 
+       ->done;
+  endtask  
 endclass
 
 class driver;
@@ -75,7 +98,7 @@ class driver;
        inf.rd_en <= 1'b0;
 	drv_tr.display("DRV");
     end 
-  endtask 
+  endtask     
 endclass
 
 
@@ -114,13 +137,13 @@ class scoreboard;
 	bit[31:0] que[$];
 	bit [31:0] rd_chk;
   event next;
-	
-	
+		
 	function new(mailbox #(transaction) mon_sco);
 		this.mon_sco = mon_sco;
 	endfunction
 	
 	int error = 0;
+  	bit full = 'b0, empty = 'b0;
 	
 	task main();
 		forever begin
@@ -129,9 +152,10 @@ class scoreboard;
 			
 			
 			if (sco_tr.rd_en) begin
-              if(!sco_tr.empty && sco_tr.rd_data == 'b0) begin
+              if(!empty) begin
 					rd_chk = que.pop_back();
-					
+					empty = sco_tr.empty;
+                	full = 0;
 					if (rd_chk == sco_tr.rd_data) begin
                       $display("POP data matched, Pop Data = %0d",rd_chk );
 					end
@@ -146,8 +170,10 @@ class scoreboard;
 			$display("------------------------------------------------------");
 			end
 			else if(sco_tr.wr_en) begin
-				if (!sco_tr.full) begin
+				if (!full) begin
 					que.push_front(sco_tr.wr_data);
+                  	full = sco_tr.full;
+                  	empty = 0;
 					$display("[SCO]: Data stored in queue: %0d", sco_tr.wr_data);
 				end
 				else begin
@@ -197,7 +223,8 @@ class environment;
 	
 	task test();
 		fork
-			gen.main();
+          gen.main(); //Main Generator
+          //gen.rw_full(); //Generator to test full and empty
 			drv.main();
 			sco.main();
 			mon.main();
@@ -211,16 +238,13 @@ class environment;
 	endtask
 	
 	task main();
-      pre_test();
+     	pre_test();
 		fork
 			test();
 			post_test();
 		join
-	
 	endtask
-
 endclass
-
 
 
 module tb;
@@ -234,18 +258,13 @@ module tb;
 
 	initial begin
 		inf.clk = 0;
-
 		forever #10 inf.clk =~inf.clk;
 	end
 
 	initial begin
-
 		env = new(inf);
-
-		env.gen.count = 50;
-
+		env.gen.count = 100;
 		env.main();
-
 	end
   
   initial begin
